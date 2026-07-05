@@ -12,14 +12,16 @@ export interface GrowthParams {
   curl: number;
   maxTurn: number;
   gravity: number;
+  waveAmp: number;
+  waveFreq: number;
   avoidRadius: number;
   crowdLimit: number;
+  startDown: number;
 }
 
-export interface Segment {
-  x1: number; y1: number; x2: number; y2: number;
+export interface BranchPath {
+  points: { x: number; y: number }[];
   gen: number;
-  t: number;
 }
 
 export interface TipEnd {
@@ -29,7 +31,7 @@ export interface TipEnd {
 }
 
 export interface StepResult {
-  segments: Segment[];
+  finished: BranchPath[];
   tipEnds: TipEnd[];
   done: boolean;
 }
@@ -43,9 +45,11 @@ interface Tip {
   id: number;
   x: number; y: number;
   heading: number;
+  phase: number;
   gen: number;
   steps: number;
   maxSteps: number;
+  points: { x: number; y: number }[];
   rng: () => number;
   alive: boolean;
 }
@@ -77,15 +81,19 @@ export function createSim(
     const len = p.branchLength * Math.pow(p.lengthDecay, gen) * (1 + (rng() - 0.5) * 2 * p.lengthVar);
     return {
       id: nextId++,
-      x, y, heading, gen,
+      x, y, heading,
+      phase: rng() * Math.PI * 2,
+      gen,
       steps: 0,
       maxSteps: Math.max(2, Math.round(len)),
+      points: [{ x, y }],
       rng,
       alive: true,
     };
   };
 
-  let tips: Tip[] = [makeTip(origin.x, origin.y, -Math.PI / 2, 0, rootRng)];
+  const startHeading = p.startDown >= 0.5 ? Math.PI / 2 : -Math.PI / 2;
+  let tips: Tip[] = [makeTip(origin.x, origin.y, startHeading, 0, rootRng)];
 
   const neighborInfo = (x: number, y: number, selfId: number) => {
     const gx = Math.floor(x / cellSize), gy = Math.floor(y / cellSize);
@@ -128,10 +136,15 @@ export function createSim(
     }
   };
 
+  const finish = (tip: Tip, finished: BranchPath[]) => {
+    tip.alive = false;
+    if (tip.points.length > 1) finished.push({ points: tip.points, gen: tip.gen });
+  };
+
   const step = (iters: number): StepResult => {
-    const segments: Segment[] = [];
+    const finished: BranchPath[] = [];
     const tipEnds: TipEnd[] = [];
-    if (done) return { segments, tipEnds, done };
+    if (done) return { finished, tipEnds, done };
 
     for (let it = 0; it < iters; it++) {
       const newTips: Tip[] = [];
@@ -139,19 +152,20 @@ export function createSim(
         if (!tip.alive) continue;
 
         if (tip.x < -MARGIN || tip.x > bounds.w + MARGIN || tip.y < -MARGIN || tip.y > bounds.h + MARGIN) {
-          tip.alive = false;
+          finish(tip, finished);
           tipEnds.push({ x: tip.x, y: tip.y, gen: tip.gen, reason: 'bounds' });
           continue;
         }
 
         const nb = neighborInfo(tip.x, tip.y, tip.id);
         if (nb.count > p.crowdLimit) {
-          tip.alive = false;
+          finish(tip, finished);
           tipEnds.push({ x: tip.x, y: tip.y, gen: tip.gen, reason: 'crowd' });
           continue;
         }
 
         let turn = (tip.rng() * 2 - 1) * p.curl;
+        turn += Math.sin(tip.steps * p.waveFreq + tip.phase) * p.waveAmp;
 
         if (p.gravity !== 0) {
           const target = p.gravity > 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -167,16 +181,15 @@ export function createSim(
         turn = Math.max(-p.maxTurn, Math.min(p.maxTurn, turn));
         tip.heading += turn;
 
-        const nx = tip.x + Math.cos(tip.heading) * p.stepSize;
-        const ny = tip.y + Math.sin(tip.heading) * p.stepSize;
-        segments.push({ x1: tip.x, y1: tip.y, x2: nx, y2: ny, gen: tip.gen, t: tip.steps / tip.maxSteps });
+        tip.x += Math.cos(tip.heading) * p.stepSize;
+        tip.y += Math.sin(tip.heading) * p.stepSize;
+        tip.points.push({ x: tip.x, y: tip.y });
         totalSegments++;
-        tip.x = nx; tip.y = ny;
 
-        if (tip.steps % 3 === 0) deposit(nx, ny, tip.id);
+        if (tip.steps % 3 === 0) deposit(tip.x, tip.y, tip.id);
 
         if (++tip.steps >= tip.maxSteps) {
-          tip.alive = false;
+          finish(tip, finished);
           if (tip.gen < p.generations) {
             split(tip, newTips);
           } else {
@@ -190,17 +203,24 @@ export function createSim(
       tips = tips.filter(t => t.alive).concat(newTips);
 
       if (totalSegments >= MAX_SEGMENTS) {
-        for (const t of tips) tipEnds.push({ x: t.x, y: t.y, gen: t.gen, reason: 'cap' });
+        for (const t of tips) {
+          finish(t, finished);
+          tipEnds.push({ x: t.x, y: t.y, gen: t.gen, reason: 'cap' });
+        }
         tips = [];
       }
       if (tips.length === 0) { done = true; break; }
     }
 
-    return { segments, tipEnds, done };
+    return { finished, tipEnds, done };
   };
+
+  const active = (): BranchPath[] =>
+    tips.filter(t => t.alive && t.points.length > 1).map(t => ({ points: t.points, gen: t.gen }));
 
   return {
     step,
+    active,
     get done() { return done; },
     get tipCount() { return tips.length; },
     get segmentCount() { return totalSegments; },
