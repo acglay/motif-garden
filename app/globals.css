@@ -47,7 +47,22 @@ body { display: flex; flex-direction: column; }
 
 .presets {
   display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+  overflow-x: auto; scrollbar-width: thin;
 }
+.presets .preset-btn { flex-shrink: 0; }
+
+.view-bar {
+  display: flex; align-items: center; gap: 10px; padding: 2px 12px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+.dim3-toggle {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: #bbb; white-space: nowrap; cursor: pointer;
+}
+.dim3-toggle input { accent-color: var(--acc); }
+.view-row { flex: 1; }
+.view-row label { width: 28px; }
+.view-row input:disabled { opacity: 0.3; }
 .preset-btn {
   background: #1c1c20; border: 1px solid rgba(255,255,255,0.12); color: #bbb;
   font-size: 11px; padding: 4px 10px; border-radius: 999px; cursor: pointer;

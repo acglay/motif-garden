@@ -10,6 +10,7 @@ import { randomSeed } from '@/lib/rng';
 import { encodeState, decodeState } from '@/lib/urlstate';
 
 type Sim = ReturnType<typeof createSim>;
+interface View { s: number; tx: number; ty: number }
 
 const macroLabels: { key: keyof Macros; label: string }[] = [
   { key: 'spread', label: 'ひろがり' },
@@ -19,31 +20,81 @@ const macroLabels: { key: keyof Macros; label: string }[] = [
   { key: 'density', label: 'みっしゅう' },
 ];
 
-function strokeBranch(ctx: CanvasRenderingContext2D, branch: BranchPath, style: Style) {
-  const w = Math.max(0.3, style.thickness * Math.pow(style.thickDecay, branch.gen + 0.5));
-  const a = Math.min(0.9, Math.max(0.12, w / 7 + 0.08));
-  ctx.beginPath();
-  ctx.lineWidth = w;
-  ctx.strokeStyle = style.hue < 0
-    ? `rgba(255,255,255,${a})`
-    : `hsla(${style.hue}, 75%, ${Math.min(88, 38 + branch.gen * 4)}%, ${a})`;
+function drawScene(
+  ctx: CanvasRenderingContext2D,
+  branches: BranchPath[],
+  style: Style,
+  originX: number,
+  view: View,
+  dpr: number,
+  cssW: number,
+  cssH: number,
+) {
+  const yaw = (style.yaw * Math.PI) / 180;
+  const cos = Math.cos(yaw), sin = Math.sin(yaw);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, cssW * dpr, cssH * dpr);
+  ctx.setTransform(dpr * view.s, 0, 0, dpr * view.s, dpr * view.tx, dpr * view.ty);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  const pts = branch.points;
-  ctx.moveTo(pts[0].x, pts[0].y);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-  ctx.stroke();
+  for (const b of branches) {
+    const w = Math.max(0.3, style.thickness * Math.pow(style.thickDecay, b.gen + 0.5));
+    const a = Math.min(0.9, Math.max(0.12, w / 7 + 0.08));
+    ctx.beginPath();
+    ctx.lineWidth = w;
+    ctx.strokeStyle = style.hue < 0
+      ? `rgba(255,255,255,${a})`
+      : `hsla(${style.hue}, 75%, ${Math.min(88, 38 + b.gen * 4)}%, ${a})`;
+    const pts = b.points;
+    ctx.moveTo(originX + (pts[0].x - originX) * cos + pts[0].z * sin, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(originX + (pts[i].x - originX) * cos + pts[i].z * sin, pts[i].y);
+    }
+    ctx.stroke();
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+function computeView(
+  branches: BranchPath[],
+  yawDeg: number,
+  originX: number,
+  cssW: number,
+  cssH: number,
+): View {
+  if (branches.length === 0) return { s: 1, tx: 0, ty: 0 };
+  const yaw = (yawDeg * Math.PI) / 180;
+  const cos = Math.cos(yaw), sin = Math.sin(yaw);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const b of branches) {
+    for (const p of b.points) {
+      const px = originX + (p.x - originX) * cos + p.z * sin;
+      if (px < x0) x0 = px;
+      if (px > x1) x1 = px;
+      if (p.y < y0) y0 = p.y;
+      if (p.y > y1) y1 = p.y;
+    }
+  }
+  const bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0);
+  const s = Math.min(1.3, (cssW * 0.92) / bw, (cssH * 0.92) / bh);
+  return {
+    s,
+    tx: cssW / 2 - ((x0 + x1) / 2) * s,
+    ty: cssH / 2 - ((y0 + y1) / 2) * s,
+  };
 }
 
 export default function Studio() {
-  const baseRef = useRef<HTMLCanvasElement>(null);
-  const liveRef = useRef<HTMLCanvasElement>(null);
-  const baseCtxRef = useRef<CanvasRenderingContext2D | null>(null);
-  const liveCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const simRef = useRef<Sim | null>(null);
   const finishedRef = useRef<BranchPath[]>([]);
+  const originXRef = useRef(0);
+  const viewRef = useRef<View>({ s: 1, tx: 0, ty: 0 });
   const rafRef = useRef(0);
   const styleRef = useRef(defaultStyle);
+  const dprRef = useRef(1);
 
   const [initial] = useState(() => decodeState(window.location.hash.slice(1)));
   const [seed, setSeed] = useState(() => initial?.seed ?? randomSeed());
@@ -52,79 +103,75 @@ export default function Studio() {
     initial?.params
       ? { ...macrosToParams(initial.macros ?? defaultMacros), ...initial.params }
       : macrosToParams(defaultMacros));
-  const [style, setStyle] = useState<Style>(() => initial?.style ?? defaultStyle);
+  const [style, setStyle] = useState<Style>(() =>
+    initial?.style ? { ...defaultStyle, ...initial.style } : defaultStyle);
   const [detailOpen, setDetailOpen] = useState(false);
   const [toast, setToast] = useState('');
 
   useEffect(() => { styleRef.current = style; }, [style]);
 
-  const clearBase = useCallback(() => {
-    const canvas = baseRef.current, ctx = baseCtxRef.current;
-    if (!canvas || !ctx) return;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-  }, []);
-
-  const clearLive = useCallback(() => {
-    const canvas = liveRef.current, ctx = liveCtxRef.current;
-    if (!canvas || !ctx) return;
-    ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-  }, []);
-
-  const redrawAll = useCallback(() => {
-    const ctx = baseCtxRef.current;
-    if (!ctx) return;
-    clearBase();
-    for (const b of finishedRef.current) strokeBranch(ctx, b, styleRef.current);
-    clearLive();
+  const allBranches = useCallback((): BranchPath[] => {
     const sim = simRef.current;
-    const liveCtx = liveCtxRef.current;
-    if (sim && !sim.done && liveCtx) {
-      for (const b of sim.active()) strokeBranch(liveCtx, b, styleRef.current);
+    const act = sim && !sim.done ? sim.active() : [];
+    return finishedRef.current.concat(act);
+  }, []);
+
+  const render = useCallback((smooth: boolean) => {
+    const canvas = canvasRef.current, ctx = ctxRef.current;
+    if (!canvas || !ctx) return;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const branches = allBranches();
+    const target = computeView(branches, styleRef.current.yaw, originXRef.current, w, h);
+    const v = viewRef.current;
+    if (smooth) {
+      v.s += (target.s - v.s) * 0.2;
+      v.tx += (target.tx - v.tx) * 0.2;
+      v.ty += (target.ty - v.ty) * 0.2;
+    } else {
+      viewRef.current = target;
     }
-  }, [clearBase, clearLive]);
+    drawScene(ctx, branches, styleRef.current, originXRef.current, viewRef.current, dprRef.current, w, h);
+  }, [allBranches]);
 
   const restart = useCallback((p: GrowthParams, s: number) => {
-    const canvas = baseRef.current;
-    if (!canvas || !baseCtxRef.current || !liveCtxRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas || !ctxRef.current) return;
     const w = canvas.clientWidth, h = canvas.clientHeight;
     const down = p.startDown >= 0.5;
+    originXRef.current = w / 2;
     simRef.current = createSim(p, s, { x: w / 2, y: down ? 8 : h - 8 }, { w, h });
     finishedRef.current = [];
-    clearBase();
-    clearLive();
+    viewRef.current = { s: 1, tx: 0, ty: 0 };
 
     cancelAnimationFrame(rafRef.current);
     const tick = () => {
       const sim = simRef.current;
-      const baseCtx = baseCtxRef.current, liveCtx = liveCtxRef.current;
-      if (!sim || !baseCtx || !liveCtx) { rafRef.current = 0; return; }
+      if (!sim) { rafRef.current = 0; return; }
       const out = sim.step(3);
-      for (const b of out.finished) strokeBranch(baseCtx, b, styleRef.current);
       finishedRef.current.push(...out.finished);
-      clearLive();
-      if (sim.done) { rafRef.current = 0; return; }
-      for (const b of sim.active()) strokeBranch(liveCtx, b, styleRef.current);
+      if (sim.done) {
+        render(false);
+        rafRef.current = 0;
+        return;
+      }
+      render(true);
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
-  }, [clearBase, clearLive]);
+  }, [render]);
 
   useEffect(() => {
+    const canvas = canvasRef.current!;
     const setup = () => {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      for (const [canvasRef, ctxRef] of [[baseRef, baseCtxRef], [liveRef, liveCtxRef]] as const) {
-        const canvas = canvasRef.current!;
-        canvas.width = canvas.clientWidth * dpr;
-        canvas.height = canvas.clientHeight * dpr;
-        const ctx = canvas.getContext('2d')!;
-        ctx.scale(dpr, dpr);
-        ctxRef.current = ctx;
-      }
+      dprRef.current = dpr;
+      canvas.width = canvas.clientWidth * dpr;
+      canvas.height = canvas.clientHeight * dpr;
+      ctxRef.current = canvas.getContext('2d')!;
     };
     setup();
 
-    const onResize = () => { setup(); redrawAll(); };
+    const onResize = () => { setup(); render(false); };
     window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('resize', onResize);
@@ -138,8 +185,8 @@ export default function Studio() {
   }, [params, seed, restart]);
 
   useEffect(() => {
-    redrawAll();
-  }, [style, redrawAll]);
+    if (!rafRef.current) render(false);
+  }, [style, render]);
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -155,16 +202,15 @@ export default function Studio() {
   };
 
   const fastForward = () => {
-    const sim = simRef.current, baseCtx = baseCtxRef.current;
-    if (!sim || !baseCtx) return;
+    const sim = simRef.current;
+    if (!sim) return;
     let guard = 0;
-    const all: BranchPath[] = [];
     while (!sim.done && guard++ < 3000) {
-      all.push(...sim.step(10).finished);
+      finishedRef.current.push(...sim.step(10).finished);
     }
-    for (const b of all) strokeBranch(baseCtx, b, styleRef.current);
-    finishedRef.current.push(...all);
-    clearLive();
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = 0;
+    render(false);
   };
 
   const handleNewSeed = () => setSeed(randomSeed());
@@ -172,14 +218,19 @@ export default function Studio() {
   const handleGacha = () => {
     const m = randomMacros(Math.random);
     setMacros(m);
-    setParams(macrosToParams(m));
+    setParams({
+      ...macrosToParams(m),
+      trunkBias: Math.random() * 0.7,
+      droop: Math.random() * 1.2 - 0.3,
+      dim3: params.dim3,
+    });
     setSeed(randomSeed());
   };
 
   const handlePreset = (i: number) => {
     const p = presets[i];
     setMacros(p.macros);
-    setParams({ ...macrosToParams(p.macros), ...(p.params ?? {}) });
+    setParams({ ...macrosToParams(p.macros), dim3: params.dim3, ...(p.params ?? {}) });
     setStyle({ ...style, ...p.style });
   };
 
@@ -195,15 +246,15 @@ export default function Studio() {
   };
 
   const handleSave = () => {
-    const base = baseRef.current, live = liveRef.current;
-    if (!base || !live) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
     const tmp = document.createElement('canvas');
-    tmp.width = base.width; tmp.height = base.height;
+    tmp.width = canvas.width; tmp.height = canvas.height;
     const ctx = tmp.getContext('2d')!;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, tmp.width, tmp.height);
-    ctx.drawImage(base, 0, 0);
-    ctx.drawImage(live, 0, 0);
+    const branches = allBranches();
+    const view = computeView(branches, styleRef.current.yaw, originXRef.current, w, h);
+    drawScene(ctx, branches, styleRef.current, originXRef.current, view, dprRef.current, w, h);
     const link = document.createElement('a');
     link.download = `motif-${seed}.png`;
     link.href = tmp.toDataURL('image/png');
@@ -219,13 +270,13 @@ export default function Studio() {
     }
   };
 
+  const is3d = params.dim3 >= 0.5;
   const groups = Array.from(new Set(paramDefs.map(d => d.group)));
 
   return (
     <>
       <div className="canvas-container">
-        <canvas ref={baseRef} />
-        <canvas ref={liveRef} />
+        <canvas ref={canvasRef} />
         {toast && <div className="toast">{toast}</div>}
       </div>
 
@@ -244,6 +295,24 @@ export default function Studio() {
           {presets.map((p, i) => (
             <button key={p.name} className="preset-btn" onClick={() => handlePreset(i)}>{p.name}</button>
           ))}
+        </div>
+
+        <div className="view-bar">
+          <label className="dim3-toggle">
+            <input
+              type="checkbox" checked={is3d}
+              onChange={e => setParams({ ...params, dim3: e.target.checked ? 1 : 0 })}
+            />
+            3D成長
+          </label>
+          <div className="row view-row">
+            <label>視点</label>
+            <input
+              type="range" min="0" max="360" step="1" value={style.yaw} disabled={!is3d}
+              onChange={e => setStyle({ ...style, yaw: +e.target.value })}
+            />
+            <span className="val">{Math.round(style.yaw)}°</span>
+          </div>
           <div className="hue-wrap">
             <input
               type="range" min="-1" max="360" value={style.hue}

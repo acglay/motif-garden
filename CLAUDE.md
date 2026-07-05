@@ -15,14 +15,18 @@ web-sandbox-branch(失敗作、参照用に残置)の反省を踏まえた新規
   DPR上限2、成長完了でrAF停止。スマホの重さ対策
 - **2層パラメータ**: マクロ5個(ひろがり/こまかさ/うねり/じゅうりょく/みっしゅう)+詳細パネル。
   マクロ→詳細は決定的変換(lib/macros.ts)で、詳細パネルに変換結果が見える
-- **将来拡張**: エンジン(lib/engine.ts)はDOM非依存の純ロジックで、線分と先端イベント(TipEnd)を返す。
-  葉っぱ=TipEnd位置への装飾、海藻=プリセット、3D=エンジンvec3化+別レンダラーで対応する想定
+- **v2での拡張**: エンジンは3Dベクトル成長(dim3=1)+平行投影(yaw回転)に対応。2Dはz=0の特殊ケース。
+  描画は毎フレーム全枝を再ストローク+バウンディングボックス自動フィット(はみ出しなし、ズーム不要)。
+  樹形制御: trunkBias(単軸/円錐樹形)、droop(しだれ、世代で重力が増減)、kink(稀な急旋回)、children 1台(主脈+稀な分岐=雷など)
+- **将来拡張**: 葉っぱ=TipEnd位置への装飾。珊瑚の大半はreaction-diffusion系が適する(別モード候補)。
+  タコノキ/マングローブ/ガジュマルの気根・支柱根は専用ルールが必要(現状はシルエット近似)
 
 ## 技術
 - Next.js 16 + TypeScript + Tailwind(既定スタック)。UIは自前CSS(globals.css)の単一ページ
 - リポジトリ: https://github.com/acglay/motif-garden (public、ブランチはmaster)
-- 公開URL: https://motif-garden.vercel.app
-- デプロイ: `npx vercel --prod --yes`(CLI認証済み)。GitHubアプリ導入後はmasterへのpushで自動デプロイに切替
+- 公開URL: https://motif-garden-v2.vercel.app (開発中の本流。masterへのpushで自動デプロイ)
+- v1凍結版: https://motif-garden.vercel.app (gitタグ`v1`。自動デプロイ切断済み、触らない)
+- 大きな節目ごとに同様の方式でバージョンを凍結する(タグ+新Vercelプロジェクト)
 
 ## Build, Test & Verify
 - `npm run dev` — 開発サーバー(http://localhost:3000)
