@@ -19,6 +19,9 @@ web-sandbox-branch(失敗作、参照用に残置)の反省を踏まえた新規
   描画は枝1本=先細りリボン(ポリゴン塗り)。親の終端幅=子の開始幅で継ぎ目が連続。
   自動フィットは3D時、始点を通る縦軸からの回転不変半径で枠を計算(yaw回転中も構図が動かない)。
   プリセットタップはシード由来の決定的ジッター(jitterParams)でパラメータも±10〜30%揺らす。
+- **v3での拡張**: 環境シミュレーション。World(障害物=円、支柱=縦線)をキャンバスタップで配置(URL/お気に入りに保存)。
+  障害物=回避ステア+内部で枯死、支柱=左右に揺れながら絡んで登る(付近は混雑上限を3倍+8に緩和して束を許す)。
+  風(wind)+幹の硬さ(stiffness): 硬いほど若い世代(先端)だけが流される。検証は tools/render.mts の demo-wind / demo-obstacle / demo-pole
   樹形制御: trunkBias(単軸/円錐樹形)、droop(しだれ、世代で重力が増減)、kink(稀な急旋回)、children 1台(主脈+稀な分岐=雷など)
 - **将来拡張**: 葉っぱ=TipEnd位置への装飾。珊瑚の大半はreaction-diffusion系が適する(別モード候補)。
   タコノキ/マングローブ/ガジュマルの気根・支柱根は専用ルールが必要(現状はシルエット近似)
@@ -26,8 +29,8 @@ web-sandbox-branch(失敗作、参照用に残置)の反省を踏まえた新規
 ## 技術
 - Next.js 16 + TypeScript + Tailwind(既定スタック)。UIは自前CSS(globals.css)の単一ページ
 - リポジトリ: https://github.com/acglay/motif-garden (public、ブランチはmaster)
-- 公開URL: https://motif-garden-v2.vercel.app (開発中の本流。masterへのpushで自動デプロイ)
-- v1凍結版: https://motif-garden.vercel.app (gitタグ`v1`。自動デプロイ切断済み、触らない)
+- 公開URL: https://motif-garden-v3.vercel.app (開発中の本流。masterへのpushで自動デプロイ)
+- 凍結版: v2 https://motif-garden-v2.vercel.app / v1 https://motif-garden.vercel.app (gitタグ`v1`/`v2`。自動デプロイ切断済み、触らない)
 - 大きな節目ごとに同様の方式でバージョンを凍結する(タグ+新Vercelプロジェクト)
 
 ## Build, Test & Verify

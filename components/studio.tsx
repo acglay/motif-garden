@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createSim, GrowthParams, BranchPath } from '@/lib/engine';
+import { createSim, GrowthParams, BranchPath, World, emptyWorld } from '@/lib/engine';
 import {
   Macros, Style, defaultMacros, defaultStyle,
   macrosToParams, macroPatch, randomMacros, jitterParams, presets, paramDefs,
@@ -31,6 +31,7 @@ function drawScene(
   dpr: number,
   cssW: number,
   cssH: number,
+  world: World,
 ) {
   const yaw = (style.yaw * Math.PI) / 180;
   const cos = Math.cos(yaw), sin = Math.sin(yaw);
@@ -38,6 +39,25 @@ function drawScene(
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, cssW * dpr, cssH * dpr);
   ctx.setTransform(dpr * view.s, 0, 0, dpr * view.s, dpr * view.tx, dpr * view.ty);
+
+  for (const o of world.obstacles) {
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.stroke();
+  }
+  for (const pl of world.poles) {
+    const px = originX + (pl.x - originX) * cos + pl.z * sin;
+    ctx.beginPath();
+    ctx.moveTo(px, -5000);
+    ctx.lineTo(px, 5000);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+    ctx.stroke();
+  }
   for (const b of branches) {
     const w0 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen));
     const w1 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen + 1));
@@ -139,13 +159,17 @@ export default function Studio() {
       : macrosToParams(defaultMacros));
   const [style, setStyle] = useState<Style>(() =>
     initial?.style ? { ...defaultStyle, ...initial.style } : defaultStyle);
+  const [world, setWorld] = useState<World>(() => initial?.world ?? emptyWorld);
+  const [editMode, setEditMode] = useState<'none' | 'obs' | 'pole'>('none');
   const [detailOpen, setDetailOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [favs, setFavs] = useState<Favorite[]>([]);
   const [loggedIn, setLoggedIn] = useState(false);
+  const worldRef = useRef(world);
 
   useEffect(() => { styleRef.current = style; }, [style]);
   useEffect(() => { is3dRef.current = params.dim3 >= 0.5; }, [params.dim3]);
+  useEffect(() => { worldRef.current = world; }, [world]);
 
   const allBranches = useCallback((): BranchPath[] => {
     const sim = simRef.current;
@@ -181,7 +205,7 @@ export default function Studio() {
     } else {
       viewRef.current = target;
     }
-    drawScene(ctx, branches, styleRef.current, originXRef.current, viewRef.current, dprRef.current, w, h);
+    drawScene(ctx, branches, styleRef.current, originXRef.current, viewRef.current, dprRef.current, w, h, worldRef.current);
   }, [allBranches, syncCanvasSize]);
 
   const restart = useCallback((p: GrowthParams, s: number) => {
@@ -190,7 +214,7 @@ export default function Studio() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     const down = p.startDown >= 0.5;
     originXRef.current = w / 2;
-    simRef.current = createSim(p, s, { x: w / 2, y: down ? 8 : h - 8 }, { w, h });
+    simRef.current = createSim(p, s, { x: w / 2, y: down ? 8 : h - 8 }, { w, h }, worldRef.current);
     finishedRef.current = [];
     viewRef.current = { s: 1, tx: 0, ty: 0 };
 
@@ -245,7 +269,7 @@ export default function Studio() {
 
   useEffect(() => {
     restart(params, seed);
-  }, [params, seed, restart]);
+  }, [params, seed, world, restart]);
 
   useEffect(() => {
     if (!rafRef.current) render(false);
@@ -253,11 +277,12 @@ export default function Studio() {
 
   useEffect(() => {
     const id = setTimeout(() => {
-      const hash = encodeState({ seed, macros, params, style });
+      const w = world.obstacles.length || world.poles.length ? world : undefined;
+      const hash = encodeState({ seed, macros, params, style, world: w });
       history.replaceState(null, '', `#${hash}`);
     }, 300);
     return () => clearTimeout(id);
-  }, [seed, macros, params, style]);
+  }, [seed, macros, params, style, world]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -319,7 +344,7 @@ export default function Studio() {
     const ctx = tmp.getContext('2d')!;
     const branches = allBranches();
     const view = computeView(branches, styleRef.current.yaw, originXRef.current, w, h, is3dRef.current);
-    drawScene(ctx, branches, styleRef.current, originXRef.current, view, dprRef.current, w, h);
+    drawScene(ctx, branches, styleRef.current, originXRef.current, view, dprRef.current, w, h, worldRef.current);
     const link = document.createElement('a');
     link.download = `motif-${seed}.png`;
     link.href = tmp.toDataURL('image/png');
@@ -333,7 +358,10 @@ export default function Studio() {
     const fav: Favorite = {
       id: Date.now().toString(36),
       name: input.trim() || defaultName,
-      state: { seed, macros, params, style },
+      state: {
+        seed, macros, params, style,
+        world: world.obstacles.length || world.poles.length ? world : undefined,
+      },
       savedAt: Date.now(),
     };
     const next = [...favs, fav];
@@ -347,6 +375,7 @@ export default function Studio() {
     setMacros(f.state.macros);
     setParams(f.state.params);
     setStyle(f.state.style);
+    setWorld(f.state.world ?? emptyWorld);
   };
 
   const handleDeleteFav = (fav: Favorite) => {
@@ -365,13 +394,55 @@ export default function Studio() {
     }
   };
 
+  const handleCanvasTap = (e: React.PointerEvent) => {
+    if (editMode === 'none') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    const v = viewRef.current;
+    const wx = (cx - v.tx) / v.s, wy = (cy - v.ty) / v.s;
+    let worldX = wx;
+    if (params.dim3 >= 0.5) {
+      const cos = Math.cos((style.yaw * Math.PI) / 180);
+      if (Math.abs(cos) < 0.35) {
+        showToast('視点を正面ちかくに戻して配置してね');
+        return;
+      }
+      worldX = originXRef.current + (wx - originXRef.current) / cos;
+    }
+    if (editMode === 'obs') {
+      setWorld({ ...world, obstacles: [...world.obstacles, { x: worldX, y: wy, r: 34 }].slice(-20) });
+    } else {
+      setWorld({ ...world, poles: [...world.poles, { x: worldX, z: 0 }].slice(-12) });
+    }
+  };
+
+  const handleLattice = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const w = canvas.clientWidth;
+    const poles = [0.2, 0.35, 0.5, 0.65, 0.8].map(t => ({ x: w * t, z: 0 }));
+    setWorld({ ...world, poles });
+  };
+
+  const handleClearWorld = () => {
+    setWorld(emptyWorld);
+    setEditMode('none');
+  };
+
   const is3d = params.dim3 >= 0.5;
   const groups = Array.from(new Set(paramDefs.map(d => d.group)));
 
   return (
     <>
-      <div className="canvas-container">
+      <div className="canvas-container" onPointerDown={handleCanvasTap}>
         <canvas ref={canvasRef} />
+        {editMode !== 'none' && (
+          <div className="edit-hint">
+            {editMode === 'obs' ? 'タップで障害物を置く' : 'タップで支柱を立てる'}
+          </div>
+        )}
         {loggedIn && (
           <a
             href={HUB_URL}
@@ -414,6 +485,21 @@ export default function Studio() {
           {presets.map((p, i) => (
             <button key={p.name} className="preset-btn" onClick={() => handlePreset(i)}>{p.name}</button>
           ))}
+        </div>
+
+        <div className="view-bar">
+          <button
+            className={`preset-btn ${editMode === 'obs' ? 'active' : ''}`}
+            onClick={() => setEditMode(editMode === 'obs' ? 'none' : 'obs')}
+          >⭕障害物</button>
+          <button
+            className={`preset-btn ${editMode === 'pole' ? 'active' : ''}`}
+            onClick={() => setEditMode(editMode === 'pole' ? 'none' : 'pole')}
+          >📍支柱</button>
+          <button className="preset-btn" onClick={handleLattice}>▦格子</button>
+          {(world.obstacles.length > 0 || world.poles.length > 0) && (
+            <button className="preset-btn" onClick={handleClearWorld}>🧹消す</button>
+          )}
         </div>
 
         <div className="view-bar">

@@ -1,15 +1,15 @@
 import sharp from 'sharp';
 import { mkdirSync } from 'fs';
-import { createSim, GrowthParams, BranchPath } from '../lib/engine';
+import { createSim, GrowthParams, BranchPath, World, emptyWorld } from '../lib/engine';
 import { macrosToParams, presets, Style, defaultStyle } from '../lib/macros';
 
 const W = 800, H = 800;
 const OUT = `${import.meta.dirname}/out`;
 
-async function render(name: string, params: GrowthParams, style: Style, seed: number, yawDeg = 0) {
+async function render(name: string, params: GrowthParams, style: Style, seed: number, yawDeg = 0, world: World = emptyWorld) {
   const down = params.startDown >= 0.5;
   const origin = { x: W / 2, y: down ? 8 : H - 8 };
-  const sim = createSim(params, seed, origin, { w: W, h: H });
+  const sim = createSim(params, seed, origin, { w: W, h: H }, world);
   const branches: BranchPath[] = [];
   let guard = 0;
   while (!sim.done && guard++ < 3000) branches.push(...sim.step(10).finished);
@@ -40,6 +40,15 @@ async function render(name: string, params: GrowthParams, style: Style, seed: nu
   const tx = W / 2 - ((x0 + x1) / 2) * s, ty = H / 2 - ((y0 + y1) / 2) * s;
 
   let shapes = '';
+  for (const o of world.obstacles) {
+    const ox = (origin.x + (o.x - origin.x) * cos) * s + tx;
+    const oy = o.y * s + ty;
+    shapes += `<circle cx="${ox.toFixed(1)}" cy="${oy.toFixed(1)}" r="${(o.r * s).toFixed(1)}" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.25)" stroke-width="1.5"/>`;
+  }
+  for (const pl of world.poles) {
+    const px = (origin.x + (pl.x - origin.x) * cos + pl.z * sin) * s + tx;
+    shapes += `<line x1="${px.toFixed(1)}" y1="0" x2="${px.toFixed(1)}" y2="${H}" stroke="rgba(255,255,255,0.18)" stroke-width="3"/>`;
+  }
   for (const b of branches) {
     const w0 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen));
     const w1 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen + 1));
@@ -74,6 +83,34 @@ mkdirSync(OUT, { recursive: true });
 const filter = process.argv[2];
 const seed = Number(process.argv[3] ?? 777);
 const yaw = Number(process.argv[4] ?? 0);
+
+if (filter?.startsWith('demo-')) {
+  const broadleaf = presets.find(p => p.name === '広葉樹')!;
+  const base = { ...macrosToParams(broadleaf.macros), ...(broadleaf.params ?? {}) };
+  const st = { ...defaultStyle, ...broadleaf.style };
+  if (filter === 'demo-wind') {
+    await render('demo-wind-soft', { ...base, wind: 0.6, stiffness: 0.15 }, st, seed);
+    await render('demo-wind-stiff', { ...base, wind: 0.6, stiffness: 0.9 }, st, seed);
+  }
+  if (filter === 'demo-obstacle') {
+    await render('demo-obstacle', base, st, seed, 0, {
+      obstacles: [{ x: 400, y: 480, r: 70 }, { x: 250, y: 350, r: 50 }, { x: 560, y: 320, r: 45 }],
+      poles: [],
+    });
+  }
+  if (filter === 'demo-pole') {
+    const ivy = presets.find(p => p.name === '蔦')!;
+    const ivyParams = { ...macrosToParams(ivy.macros), ...(ivy.params ?? {}) };
+    const ivySt = { ...defaultStyle, ...ivy.style };
+    await render('demo-pole', ivyParams, ivySt, seed, 0, {
+      obstacles: [], poles: [{ x: 400, z: 0 }],
+    });
+    await render('demo-lattice', ivyParams, ivySt, seed, 0, {
+      obstacles: [], poles: [0.2, 0.35, 0.5, 0.65, 0.8].map(t => ({ x: 800 * t, z: 0 })),
+    });
+  }
+  process.exit(0);
+}
 
 for (const p of presets) {
   if (filter && p.name !== filter) continue;

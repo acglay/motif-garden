@@ -46,6 +46,8 @@ export function macrosToParams(m: Macros): GrowthParams {
     droop: 0,
     crowdLimit: Math.round(lerp(2, 14, m.density)),
     avoidRadius: lerp(40, 10, m.density),
+    wind: 0,
+    stiffness: 0.5,
     startDown: 0,
     dim3: 0,
   };
@@ -305,6 +307,8 @@ export const paramDefs: ParamDef[] = [
   { key: 'waveFreq', label: '揺れ周期', min: 0.02, max: 0.5, step: 0.01, group: '動き' },
   { key: 'gravity', label: '重力', min: -1, max: 1, step: 0.02, group: '動き' },
   { key: 'droop', label: 'しだれ', min: -1, max: 1, step: 0.02, group: '動き' },
+  { key: 'wind', label: '風', min: -1, max: 1, step: 0.02, group: '環境' },
+  { key: 'stiffness', label: '幹の硬さ', min: 0, max: 1, step: 0.01, group: '環境' },
   { key: 'avoidRadius', label: '回避半径', min: 4, max: 60, step: 1, group: '空間' },
   { key: 'crowdLimit', label: '混雑耐性', min: 1, max: 16, step: 1, group: '空間' },
 ];

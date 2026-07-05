@@ -68,6 +68,14 @@ body { display: flex; flex-direction: column; }
   font-size: 11px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
 }
 .preset-btn:active { background: #333; }
+.preset-btn.active { background: #2a4a3a; color: var(--acc); border-color: var(--acc); }
+
+.edit-hint {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  background: rgba(30,30,34,0.9); color: var(--acc); font-size: 12px;
+  padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(110,231,183,0.4);
+  pointer-events: none;
+}
 .hue-wrap { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .hue-wrap input { width: 70px; }
 

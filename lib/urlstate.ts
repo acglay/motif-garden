@@ -1,4 +1,4 @@
-import { GrowthParams } from './engine';
+import { GrowthParams, World } from './engine';
 import { Macros, Style } from './macros';
 
 export interface AppState {
@@ -6,6 +6,7 @@ export interface AppState {
   macros: Macros;
   params: GrowthParams;
   style: Style;
+  world?: World;
 }
 
 export function encodeState(state: AppState): string {

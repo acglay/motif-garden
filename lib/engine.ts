@@ -19,9 +19,20 @@ export interface GrowthParams {
   droop: number;
   avoidRadius: number;
   crowdLimit: number;
+  wind: number;
+  stiffness: number;
   startDown: number;
   dim3: number;
 }
+
+export interface Obstacle { x: number; y: number; r: number }
+export interface Pole { x: number; z: number }
+export interface World {
+  obstacles: Obstacle[];
+  poles: Pole[];
+}
+
+export const emptyWorld: World = { obstacles: [], poles: [] };
 
 export interface P3 { x: number; y: number; z: number }
 
@@ -103,6 +114,7 @@ export function createSim(
   seed: number,
   origin: { x: number; y: number },
   bounds: { w: number; h: number },
+  world: World = emptyWorld,
 ) {
   const p = params;
   const is3d = p.dim3 >= 0.5;
@@ -218,8 +230,14 @@ export function createSim(
           continue;
         }
 
+        let nearPole = false;
+        for (const pl of world.poles) {
+          if (Math.hypot(pos.x - pl.x, pos.z - pl.z) < 45) { nearPole = true; break; }
+        }
+
         const nb = neighborInfo(pos, tip.id);
-        if (nb.count > p.crowdLimit) {
+        const crowdCap = nearPole ? p.crowdLimit * 3 + 8 : p.crowdLimit;
+        if (nb.count > crowdCap) {
           finish(tip, finished);
           tipEnds.push({ ...pos, gen: tip.gen, reason: 'crowd' });
           continue;
@@ -247,6 +265,47 @@ export function createSim(
         if (nb.count > 0) {
           const k = Math.min(0.5 * p.maxTurn, 0.3 * nb.count / (p.crowdLimit + 1));
           tip.dir = mix(tip.dir, norm(nb.away), k);
+        }
+
+        if (p.wind !== 0) {
+          const bend = Math.pow((tip.gen + 1) / (p.generations + 1), 0.5 + p.stiffness * 2.5);
+          const target: P3 = { x: Math.sign(p.wind), y: 0, z: 0 };
+          tip.dir = mix(tip.dir, target, Math.min(Math.abs(p.wind) * 0.06 * bend, p.maxTurn));
+        }
+
+        for (const o of world.obstacles) {
+          const dx = pos.x - o.x, dy = pos.y - o.y;
+          const d = Math.hypot(dx, dy);
+          if (d < o.r * 0.85) {
+            finish(tip, finished);
+            tipEnds.push({ ...pos, gen: tip.gen, reason: 'bounds' });
+            break;
+          }
+          if (d < o.r + 40) {
+            const away: P3 = { x: dx / Math.max(d, 1), y: dy / Math.max(d, 1), z: 0 };
+            const k = Math.min(0.45, (1 - (d - o.r) / 40) * 0.4);
+            tip.dir = mix(tip.dir, away, k);
+          }
+        }
+        if (!tip.alive) continue;
+
+        for (const pl of world.poles) {
+          const rx = pos.x - pl.x, rz = pos.z - pl.z;
+          const d = Math.hypot(rx, rz);
+          if (d < 45) {
+            const dm = Math.max(d, 1);
+            const sway = Math.sin(tip.steps * 0.22 + tip.phase);
+            let desired: P3;
+            if (is3d) {
+              const tx = -rz / dm, tz = rx / dm;
+              desired = norm({ x: tx * 0.9 - (rx / dm) * 0.2, y: -0.6, z: tz * 0.9 - (rz / dm) * 0.2 });
+            } else {
+              const targetX = pl.x + sway * 14;
+              desired = norm({ x: (targetX - pos.x) * 0.08, y: -1, z: 0 });
+            }
+            const k = Math.min(0.3, (1 - d / 45) * 0.4);
+            tip.dir = mix(tip.dir, desired, k);
+          }
         }
 
         if (p.kink > 0 && tip.rng() < p.kink * 0.12) {
