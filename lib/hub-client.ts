@@ -1,4 +1,4 @@
-const HUB_URL = 'https://hub-ashy-delta.vercel.app';
+export const HUB_URL = 'https://hub-ashy-delta.vercel.app';
 const APP_ID = 'motif-garden';
 const TOKEN_KEY = 'hub-token';
 

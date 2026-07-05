@@ -8,7 +8,7 @@ import {
 } from '@/lib/macros';
 import { randomSeed } from '@/lib/rng';
 import { encodeState, decodeState } from '@/lib/urlstate';
-import { captureHubToken, hubUser } from '@/lib/hub-client';
+import { captureHubToken, hubUser, HUB_URL } from '@/lib/hub-client';
 import { Favorite, saveFavs, syncFavs } from '@/lib/favorites';
 
 type Sim = ReturnType<typeof createSim>;
@@ -110,6 +110,7 @@ export default function Studio() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [favs, setFavs] = useState<Favorite[]>([]);
+  const [loggedIn, setLoggedIn] = useState(false);
 
   useEffect(() => { styleRef.current = style; }, [style]);
 
@@ -187,6 +188,7 @@ export default function Studio() {
     captureHubToken();
     hubUser().then(u => {
       if (u) {
+        setLoggedIn(true);
         setToast(`${u.emoji} ${u.name} でログインちゅう`);
         setTimeout(() => setToast(''), 1800);
       }
@@ -277,15 +279,19 @@ export default function Studio() {
   };
 
   const handleFav = () => {
+    const defaultName = `おきにいり${favs.length + 1}`;
+    const input = window.prompt('お気に入りの名前', defaultName);
+    if (input === null) return;
     const fav: Favorite = {
       id: Date.now().toString(36),
+      name: input.trim() || defaultName,
       state: { seed, macros, params, style },
       savedAt: Date.now(),
     };
     const next = [...favs, fav];
     setFavs(next);
     saveFavs(next);
-    showToast('お気に入りにほぞんしました');
+    showToast(`「${fav.name}」をほぞんしました`);
   };
 
   const handleLoadFav = (f: Favorite) => {
@@ -295,8 +301,9 @@ export default function Studio() {
     setStyle(f.state.style);
   };
 
-  const handleDeleteFav = (id: string) => {
-    const next = favs.filter(f => f.id !== id);
+  const handleDeleteFav = (fav: Favorite) => {
+    if (!window.confirm(`「${fav.name}」を消しますか?`)) return;
+    const next = favs.filter(f => f.id !== fav.id);
     setFavs(next);
     saveFavs(next);
   };
@@ -317,6 +324,18 @@ export default function Studio() {
     <>
       <div className="canvas-container">
         <canvas ref={canvasRef} />
+        {loggedIn && (
+          <a
+            href={HUB_URL}
+            style={{
+              position: 'absolute', top: 12, left: 12, zIndex: 10,
+              fontSize: 20, textDecoration: 'none', lineHeight: 1,
+              background: 'rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px 10px',
+            }}
+          >
+            🏠
+          </a>
+        )}
         {toast && <div className="toast">{toast}</div>}
       </div>
 
@@ -327,7 +346,7 @@ export default function Studio() {
           <button className="action-btn" title="新しい種" onClick={handleNewSeed}>🎲</button>
           <button className="action-btn" title="全部ガチャ" onClick={handleGacha}>🔀</button>
           <button className="action-btn" title="すぐ完成" onClick={fastForward}>⏩</button>
-          <button className="action-btn" title="お気に入りにほぞん" onClick={handleFav}>★</button>
+          <button className="action-btn" title="お気に入りにほぞん" onClick={handleFav}>☆</button>
           <button className="action-btn" title="PNG保存" onClick={handleSave}>💾</button>
           <button className="action-btn" title="URL共有" onClick={handleShare}>🔗</button>
         </div>
@@ -336,8 +355,8 @@ export default function Studio() {
           <div className="presets">
             {favs.map((f, i) => (
               <button key={f.id} className="preset-btn" onClick={() => handleLoadFav(f)}>
-                ★{i + 1}
-                <span onClick={e => { e.stopPropagation(); handleDeleteFav(f.id); }}> ✕</span>
+                ☆{f.name || `おきにいり${i + 1}`}
+                <span onClick={e => { e.stopPropagation(); handleDeleteFav(f); }}> ✕</span>
               </button>
             ))}
           </div>

@@ -3,6 +3,7 @@ import { hubToken, hubLoad, hubSave } from './hub-client';
 
 export interface Favorite {
   id: string;
+  name: string;
   state: AppState;
   savedAt: number;
 }
