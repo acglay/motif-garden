@@ -8,6 +8,8 @@ import {
 } from '@/lib/macros';
 import { randomSeed } from '@/lib/rng';
 import { encodeState, decodeState } from '@/lib/urlstate';
+import { captureHubToken, hubUser } from '@/lib/hub-client';
+import { Favorite, saveFavs, syncFavs } from '@/lib/favorites';
 
 type Sim = ReturnType<typeof createSim>;
 interface View { s: number; tx: number; ty: number }
@@ -107,6 +109,7 @@ export default function Studio() {
     initial?.style ? { ...defaultStyle, ...initial.style } : defaultStyle);
   const [detailOpen, setDetailOpen] = useState(false);
   const [toast, setToast] = useState('');
+  const [favs, setFavs] = useState<Favorite[]>([]);
 
   useEffect(() => { styleRef.current = style; }, [style]);
 
@@ -178,6 +181,17 @@ export default function Studio() {
       cancelAnimationFrame(rafRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    captureHubToken();
+    hubUser().then(u => {
+      if (u) {
+        setToast(`${u.emoji} ${u.name} でログインちゅう`);
+        setTimeout(() => setToast(''), 1800);
+      }
+    });
+    syncFavs().then(setFavs);
   }, []);
 
   useEffect(() => {
@@ -262,6 +276,31 @@ export default function Studio() {
     link.click();
   };
 
+  const handleFav = () => {
+    const fav: Favorite = {
+      id: Date.now().toString(36),
+      state: { seed, macros, params, style },
+      savedAt: Date.now(),
+    };
+    const next = [...favs, fav];
+    setFavs(next);
+    saveFavs(next);
+    showToast('お気に入りにほぞんしました');
+  };
+
+  const handleLoadFav = (f: Favorite) => {
+    setSeed(f.state.seed);
+    setMacros(f.state.macros);
+    setParams(f.state.params);
+    setStyle(f.state.style);
+  };
+
+  const handleDeleteFav = (id: string) => {
+    const next = favs.filter(f => f.id !== id);
+    setFavs(next);
+    saveFavs(next);
+  };
+
   const handleShare = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -288,9 +327,21 @@ export default function Studio() {
           <button className="action-btn" title="新しい種" onClick={handleNewSeed}>🎲</button>
           <button className="action-btn" title="全部ガチャ" onClick={handleGacha}>🔀</button>
           <button className="action-btn" title="すぐ完成" onClick={fastForward}>⏩</button>
+          <button className="action-btn" title="お気に入りにほぞん" onClick={handleFav}>★</button>
           <button className="action-btn" title="PNG保存" onClick={handleSave}>💾</button>
           <button className="action-btn" title="URL共有" onClick={handleShare}>🔗</button>
         </div>
+
+        {favs.length > 0 && (
+          <div className="presets">
+            {favs.map((f, i) => (
+              <button key={f.id} className="preset-btn" onClick={() => handleLoadFav(f)}>
+                ★{i + 1}
+                <span onClick={e => { e.stopPropagation(); handleDeleteFav(f.id); }}> ✕</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="presets">
           {presets.map((p, i) => (
