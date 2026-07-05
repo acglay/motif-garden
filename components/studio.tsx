@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createSim, GrowthParams, BranchPath } from '@/lib/engine';
 import {
   Macros, Style, defaultMacros, defaultStyle,
@@ -153,7 +153,21 @@ export default function Studio() {
     return finishedRef.current.concat(act);
   }, []);
 
+  const syncCanvasSize = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return false;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    dprRef.current = dpr;
+    const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+    if (canvas.width === w && canvas.height === h) return false;
+    canvas.width = w;
+    canvas.height = h;
+    ctxRef.current = canvas.getContext('2d')!;
+    return true;
+  }, []);
+
   const render = useCallback((smooth: boolean) => {
+    syncCanvasSize();
     const canvas = canvasRef.current, ctx = ctxRef.current;
     if (!canvas || !ctx) return;
     const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -168,7 +182,7 @@ export default function Studio() {
       viewRef.current = target;
     }
     drawScene(ctx, branches, styleRef.current, originXRef.current, viewRef.current, dprRef.current, w, h);
-  }, [allBranches]);
+  }, [allBranches, syncCanvasSize]);
 
   const restart = useCallback((p: GrowthParams, s: number) => {
     const canvas = canvasRef.current;
@@ -199,23 +213,23 @@ export default function Studio() {
 
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const setup = () => {
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      dprRef.current = dpr;
-      canvas.width = canvas.clientWidth * dpr;
-      canvas.height = canvas.clientHeight * dpr;
-      ctxRef.current = canvas.getContext('2d')!;
-    };
-    setup();
+    syncCanvasSize();
 
-    const onResize = () => { setup(); render(false); };
+    const onResize = () => { if (syncCanvasSize()) render(false); };
     window.addEventListener('resize', onResize);
+    const ro = new ResizeObserver(onResize);
+    ro.observe(canvas);
     return () => {
       window.removeEventListener('resize', onResize);
+      ro.disconnect();
       cancelAnimationFrame(rafRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useLayoutEffect(() => {
+    if (syncCanvasSize()) render(false);
+  }, [detailOpen, favs, syncCanvasSize, render]);
 
   useEffect(() => {
     captureHubToken();
