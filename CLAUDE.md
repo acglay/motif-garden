@@ -20,7 +20,8 @@ web-sandbox-branch(失敗作、参照用に残置)の反省を踏まえた新規
 
 ## 技術
 - Next.js 16 + TypeScript + Tailwind(既定スタック)。UIは自前CSS(globals.css)の単一ページ
-- デプロイ: GitHub(公開リポジトリ)→ Vercel自動デプロイ。スマホはURLで利用
+- リポジトリ: https://github.com/acglay/motif-garden (public、ブランチはmaster)
+- デプロイ: Vercel自動デプロイ(masterへのpushで発火)。スマホはURLで利用
 
 ## Build, Test & Verify
 - `npm run dev` — 開発サーバー(http://localhost:3000)
