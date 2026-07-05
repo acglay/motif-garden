@@ -16,30 +16,56 @@ async function render(name: string, params: GrowthParams, style: Style, seed: nu
 
   const yaw = yawDeg * Math.PI / 180;
   const cos = Math.cos(yaw), sin = Math.sin(yaw);
-  const proj = (p: { x: number; y: number; z: number }) =>
-    ({ x: origin.x + (p.x - origin.x) * cos + p.z * sin, y: p.y });
+  const is3d = params.dim3 >= 0.5;
 
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  for (const b of branches) for (const p of b.points) {
-    const q = proj(p);
-    if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x;
-    if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+  if (is3d) {
+    let r2max = 1;
+    for (const b of branches) for (const p of b.points) {
+      const dx = p.x - origin.x;
+      const r2 = dx * dx + p.z * p.z;
+      if (r2 > r2max) r2max = r2;
+      if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+    }
+    const r = Math.sqrt(r2max);
+    x0 = origin.x - r; x1 = origin.x + r;
+  } else {
+    for (const b of branches) for (const p of b.points) {
+      const px = origin.x + (p.x - origin.x) * cos + p.z * sin;
+      if (px < x0) x0 = px; if (px > x1) x1 = px;
+      if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+    }
   }
   const s = Math.min(1.3, (W * 0.92) / Math.max(1, x1 - x0), (H * 0.92) / Math.max(1, y1 - y0));
   const tx = W / 2 - ((x0 + x1) / 2) * s, ty = H / 2 - ((y0 + y1) / 2) * s;
 
-  let paths = '';
+  let shapes = '';
   for (const b of branches) {
-    const w = Math.max(0.3, style.thickness * Math.pow(style.thickDecay, b.gen + 0.5));
-    const a = Math.min(0.9, Math.max(0.12, w / 7 + 0.08));
+    const w0 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen));
+    const w1 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen + 1));
+    const a = Math.min(0.9, Math.max(0.22, (w0 + w1) / 10 + 0.12));
     const color = style.hue < 0 ? 'rgb(255,255,255)' : `hsl(${style.hue},75%,${Math.min(88, 38 + b.gen * 4)}%)`;
-    const d = b.points.map((p, i) => {
-      const q = proj(p);
-      return `${i === 0 ? 'M' : 'L'}${(q.x * s + tx).toFixed(1)},${(q.y * s + ty).toFixed(1)}`;
-    }).join('');
-    paths += `<path d="${d}" fill="none" stroke="${color}" stroke-opacity="${a.toFixed(2)}" stroke-width="${(w * s).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    const pts = b.points;
+    const n = pts.length;
+    const px: number[] = new Array(n), py: number[] = new Array(n);
+    for (let i = 0; i < n; i++) {
+      px[i] = (origin.x + (pts[i].x - origin.x) * cos + pts[i].z * sin) * s + tx;
+      py[i] = pts[i].y * s + ty;
+    }
+    const left: string[] = [], right: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const i0 = Math.max(0, i - 1), i1 = Math.min(n - 1, i + 1);
+      let dx = px[i1] - px[i0], dy = py[i1] - py[i0];
+      const m = Math.hypot(dx, dy) || 1;
+      dx /= m; dy /= m;
+      const hw = ((w0 + (w1 - w0) * (i / (n - 1))) / 2) * s;
+      left.push(`${(px[i] - dy * hw).toFixed(1)},${(py[i] + dx * hw).toFixed(1)}`);
+      right.push(`${(px[i] + dy * hw).toFixed(1)},${(py[i] - dx * hw).toFixed(1)}`);
+    }
+    const d = `M${left.join('L')}L${right.reverse().join('L')}Z`;
+    shapes += `<path d="${d}" fill="${color}" fill-opacity="${a.toFixed(2)}"/>`;
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#000"/>${paths}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#000"/>${shapes}</svg>`;
   await sharp(Buffer.from(svg)).png().toFile(`${OUT}/${name}.png`);
   console.log(`${name}: branches=${branches.length}`);
 }

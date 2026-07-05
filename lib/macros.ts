@@ -1,4 +1,5 @@
 import { GrowthParams } from './engine';
+import { mulberry32 } from './rng';
 
 export interface Macros {
   spread: number;
@@ -65,6 +66,24 @@ export function macroPatch(macros: Macros, key: keyof Macros): Partial<GrowthPar
   return patch;
 }
 
+export function jitterParams(p: GrowthParams, seed: number): GrowthParams {
+  const rng = mulberry32((seed ^ 0x9e3779b9) >>> 0);
+  const j = (v: number, f: number) => v * (1 + (rng() - 0.5) * 2 * f);
+  return {
+    ...p,
+    branchLength: Math.max(4, Math.round(j(p.branchLength, 0.15))),
+    lengthVar: Math.min(1, Math.max(0, j(p.lengthVar, 0.2))),
+    children: Math.max(1, j(p.children, 0.12)),
+    splitAngle: Math.max(0.05, j(p.splitAngle, 0.18)),
+    curl: j(p.curl, 0.3),
+    waveAmp: j(p.waveAmp, 0.3),
+    waveFreq: Math.max(0.02, j(p.waveFreq, 0.25)),
+    gravity: p.gravity + (rng() - 0.5) * 0.1,
+    droop: p.droop + (p.droop === 0 ? 0 : (rng() - 0.5) * 0.15),
+    trunkBias: Math.min(1, Math.max(0, p.trunkBias + (p.trunkBias === 0 ? 0 : (rng() - 0.5) * 0.15))),
+  };
+}
+
 export function randomMacros(rand: () => number): Macros {
   return {
     spread: rand(),
@@ -102,19 +121,30 @@ export const presets: Preset[] = [
     params: { trunkBias: 0.55, gravity: -0.35, splitAngle: 0.5 },
   },
   {
-    name: 'ポプラ', macros: M(0.25, 0.6, 0.08, 0.2, 0.5),
-    style: { hue: 90, thickness: 8 },
-    params: { trunkBias: 0.75, gravity: -0.6, lengthDecay: 0.8, splitAngle: 0.35 },
+    name: 'ポプラ', macros: M(0.2, 0.7, 0.05, 0.1, 0.7),
+    style: { hue: 90, thickness: 9, thickDecay: 0.78 },
+    params: {
+      trunkBias: 0.8, children: 2.6, generations: 9, branchLength: 20,
+      lengthDecay: 0.75, splitAngle: 0.28, splitAngleVar: 0.3,
+      gravity: -0.85, curl: 0.015, maxTurn: 0.1, avoidRadius: 6, crowdLimit: 14,
+    },
   },
   {
-    name: '白樺', macros: M(0.35, 0.6, 0.15, 0.3, 0.5),
-    style: { hue: -1, thickness: 6, thickDecay: 0.7 },
-    params: { trunkBias: 0.6, gravity: -0.3, droop: 0.3 },
+    name: '白樺', macros: M(0.3, 0.6, 0.12, 0.2, 0.5),
+    style: { hue: -1, thickness: 7, thickDecay: 0.78 },
+    params: {
+      trunkBias: 0.7, children: 2.3, generations: 8, branchLength: 24,
+      lengthDecay: 0.8, splitAngle: 0.45, gravity: -0.5, droop: 0.3,
+    },
   },
   {
-    name: '糸杉', macros: M(0.15, 0.6, 0.08, 0.1, 0.6),
-    style: { hue: 130, thickness: 7 },
-    params: { trunkBias: 0.85, gravity: -0.85, lengthDecay: 0.68, splitAngle: 0.25, branchLength: 30 },
+    name: '糸杉', macros: M(0.15, 0.75, 0.08, 0.05, 0.75),
+    style: { hue: 130, thickness: 8, thickDecay: 0.8 },
+    params: {
+      trunkBias: 0.8, children: 2.8, generations: 10, branchLength: 16,
+      lengthDecay: 0.8, lengthVar: 0.3, splitAngle: 0.3,
+      gravity: -0.9, curl: 0.02, maxTurn: 0.1, avoidRadius: 5, crowdLimit: 15,
+    },
   },
   {
     name: '松', macros: M(0.55, 0.5, 0.12, 0.45, 0.4),
@@ -122,9 +152,13 @@ export const presets: Preset[] = [
     params: { trunkBias: 0.5, kink: 0.25, droop: -0.15, lengthVar: 0.6, children: 2 },
   },
   {
-    name: '杉', macros: M(0.3, 0.65, 0.1, 0.15, 0.5),
-    style: { hue: 135, thickness: 8 },
-    params: { trunkBias: 0.7, gravity: -0.5, droop: 0.25, lengthDecay: 0.78 },
+    name: '杉', macros: M(0.3, 0.7, 0.1, 0.1, 0.6),
+    style: { hue: 135, thickness: 9, thickDecay: 0.78 },
+    params: {
+      trunkBias: 0.75, children: 2.6, generations: 9, branchLength: 22,
+      lengthDecay: 0.76, splitAngle: 0.45,
+      gravity: -0.6, droop: 0.2, avoidRadius: 7, crowdLimit: 13,
+    },
   },
   {
     name: 'セコイア', macros: M(0.3, 0.6, 0.06, 0.1, 0.5),
@@ -133,29 +167,38 @@ export const presets: Preset[] = [
   },
   {
     name: '柳', macros: M(0.35, 0.45, 0.2, 0.35, 0.5),
-    style: { hue: 80, thickness: 7, thickDecay: 0.8 },
+    style: { hue: 80, thickness: 8, thickDecay: 0.82 },
     params: {
-      trunkBias: 0.3, droop: 0.9, lengthDecay: 1.0, branchLength: 30,
-      curl: 0.04, maxTurn: 0.2, gravity: -0.2, generations: 6,
+      trunkBias: 0.3, droop: 1.6, lengthDecay: 1.05, branchLength: 30,
+      children: 2.2, splitAngle: 0.35, lengthVar: 0.25,
+      curl: 0.02, maxTurn: 0.18, gravity: -0.7, generations: 5,
+      avoidRadius: 8, crowdLimit: 14,
     },
   },
   {
     name: '枝垂れ桜', macros: M(0.4, 0.55, 0.15, 0.35, 0.5),
-    style: { hue: 330, thickness: 6 },
+    style: { hue: 330, thickness: 7, thickDecay: 0.82 },
     params: { droop: 0.8, lengthDecay: 0.92, gravity: -0.15, children: 2.4 },
   },
   {
-    name: '龍血樹', macros: M(0.4, 0.5, 0.06, 0.2, 0.5),
-    style: { hue: 25, thickness: 14, thickDecay: 0.72 },
+    name: '龍血樹', macros: M(0.4, 0.6, 0.06, 0.2, 0.7),
+    style: { hue: 25, thickness: 16, thickDecay: 0.8 },
     params: {
-      trunkBias: 0, children: 2.05, splitAngle: 0.5, generations: 6,
-      branchLength: 40, lengthDecay: 0.62, gravity: -0.4, droop: -0.3,
+      trunkBias: 0, children: 2.3, splitAngle: 0.62, splitAngleVar: 0.2, generations: 8,
+      branchLength: 26, lengthDecay: 0.78, lengthVar: 0.15,
+      curl: 0.02, maxTurn: 0.1, gravity: -0.55, droop: -0.35,
+      avoidRadius: 9, crowdLimit: 12,
     },
   },
   {
-    name: 'タコノキ', macros: M(0.6, 0.35, 0.08, 0.35, 0.5),
-    style: { hue: 140, thickness: 10 },
-    params: { children: 3, splitAngle: 1.0, generations: 4, trunkBias: 0.3, kink: 0.1, gravity: -0.2 },
+    name: 'タコノキ', macros: M(0.6, 0.3, 0.08, 0.3, 0.5),
+    style: { hue: 140, thickness: 11, thickDecay: 0.8 },
+    params: {
+      generations: 3, children: 2.4, splitAngle: 0.95, splitAngleVar: 0.3,
+      branchLength: 20, lengthDecay: 0.95, lengthVar: 0.3,
+      kink: 0.12, curl: 0.02, maxTurn: 0.12, gravity: -0.25, trunkBias: 0,
+      avoidRadius: 8, crowdLimit: 12,
+    },
   },
   {
     name: 'マングローブ', macros: M(0.6, 0.6, 0.12, 0.55, 0.5),
@@ -171,8 +214,9 @@ export const presets: Preset[] = [
     name: 'タビビトノキ', macros: M(0.5, 0.2, 0.05, 0.3, 0.5),
     style: { hue: 140, thickness: 10 },
     params: {
-      generations: 1, children: 11, splitAngle: 0.22, branchLength: 26,
+      generations: 1, children: 11, splitAngle: 0.2, branchLength: 26,
       lengthDecay: 1.5, gravity: -0.3, waveAmp: 0.02, trunkBias: 0, dim3: 0,
+      avoidRadius: 5, crowdLimit: 16,
     },
   },
   {
@@ -185,7 +229,7 @@ export const presets: Preset[] = [
   },
   {
     name: '藤', macros: M(0.4, 0.45, 0.35, 0.45, 0.5),
-    style: { hue: 275, thickness: 5 },
+    style: { hue: 275, thickness: 6, thickDecay: 0.86 },
     params: {
       curl: 0.12, waveAmp: 0.06, droop: 0.7, lengthDecay: 1.0,
       children: 2, generations: 6, gravity: -0.1,
@@ -193,7 +237,7 @@ export const presets: Preset[] = [
   },
   {
     name: 'ぶどう', macros: M(0.55, 0.45, 0.4, 0.5, 0.5),
-    style: { hue: 85, thickness: 5 },
+    style: { hue: 85, thickness: 6, thickDecay: 0.88 },
     params: {
       curl: 0.14, kink: 0.15, waveAmp: 0.05, children: 2.1,
       lengthDecay: 0.95, branchLength: 24, gravity: 0,
@@ -201,19 +245,11 @@ export const presets: Preset[] = [
   },
   {
     name: '蔦', macros: M(0.6, 0.75, 0.5, 0.55, 0.35),
-    style: { hue: 115, thickness: 3.5 },
+    style: { hue: 115, thickness: 4.5, thickDecay: 0.9 },
     params: {
       curl: 0.18, maxTurn: 0.3, children: 2.3, splitAngle: 0.9,
       generations: 10, branchLength: 14, lengthDecay: 0.95, gravity: 0.1,
       crowdLimit: 4, avoidRadius: 18,
-    },
-  },
-  {
-    name: '松ぼっくり', macros: M(0.2, 0.3, 0.05, 0.6, 0.7),
-    style: { hue: 30, thickness: 12, thickDecay: 0.85 },
-    params: {
-      generations: 2, children: 9, splitAngle: 0.3, branchLength: 11,
-      droop: 0.55, gravity: 0.25, trunkBias: 0,
     },
   },
   {

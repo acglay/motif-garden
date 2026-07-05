@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createSim, GrowthParams, BranchPath } from '@/lib/engine';
 import {
   Macros, Style, defaultMacros, defaultStyle,
-  macrosToParams, macroPatch, randomMacros, presets, paramDefs,
+  macrosToParams, macroPatch, randomMacros, jitterParams, presets, paramDefs,
 } from '@/lib/macros';
 import { randomSeed } from '@/lib/rng';
 import { encodeState, decodeState } from '@/lib/urlstate';
@@ -38,22 +38,36 @@ function drawScene(
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, cssW * dpr, cssH * dpr);
   ctx.setTransform(dpr * view.s, 0, 0, dpr * view.s, dpr * view.tx, dpr * view.ty);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
   for (const b of branches) {
-    const w = Math.max(0.3, style.thickness * Math.pow(style.thickDecay, b.gen + 0.5));
-    const a = Math.min(0.9, Math.max(0.12, w / 7 + 0.08));
+    const w0 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen));
+    const w1 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen + 1));
+    const a = Math.min(0.9, Math.max(0.22, (w0 + w1) / 10 + 0.12));
+    const pts = b.points;
+    const n = pts.length;
+    const px: number[] = new Array(n), py: number[] = new Array(n);
+    for (let i = 0; i < n; i++) {
+      px[i] = originX + (pts[i].x - originX) * cos + pts[i].z * sin;
+      py[i] = pts[i].y;
+    }
     ctx.beginPath();
-    ctx.lineWidth = w;
-    ctx.strokeStyle = style.hue < 0
+    const rx: number[] = new Array(n), ry: number[] = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const i0 = Math.max(0, i - 1), i1 = Math.min(n - 1, i + 1);
+      let dx = px[i1] - px[i0], dy = py[i1] - py[i0];
+      const m = Math.hypot(dx, dy) || 1;
+      dx /= m; dy /= m;
+      const hw = (w0 + (w1 - w0) * (i / (n - 1))) / 2;
+      const lx = px[i] - dy * hw, ly = py[i] + dx * hw;
+      rx[i] = px[i] + dy * hw; ry[i] = py[i] - dx * hw;
+      if (i === 0) ctx.moveTo(lx, ly);
+      else ctx.lineTo(lx, ly);
+    }
+    for (let i = n - 1; i >= 0; i--) ctx.lineTo(rx[i], ry[i]);
+    ctx.closePath();
+    ctx.fillStyle = style.hue < 0
       ? `rgba(255,255,255,${a})`
       : `hsla(${style.hue}, 75%, ${Math.min(88, 38 + b.gen * 4)}%, ${a})`;
-    const pts = b.points;
-    ctx.moveTo(originX + (pts[0].x - originX) * cos + pts[0].z * sin, pts[0].y);
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(originX + (pts[i].x - originX) * cos + pts[i].z * sin, pts[i].y);
-    }
-    ctx.stroke();
+    ctx.fill();
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
@@ -64,18 +78,35 @@ function computeView(
   originX: number,
   cssW: number,
   cssH: number,
+  is3d: boolean,
 ): View {
   if (branches.length === 0) return { s: 1, tx: 0, ty: 0 };
-  const yaw = (yawDeg * Math.PI) / 180;
-  const cos = Math.cos(yaw), sin = Math.sin(yaw);
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  for (const b of branches) {
-    for (const p of b.points) {
-      const px = originX + (p.x - originX) * cos + p.z * sin;
-      if (px < x0) x0 = px;
-      if (px > x1) x1 = px;
-      if (p.y < y0) y0 = p.y;
-      if (p.y > y1) y1 = p.y;
+  if (is3d) {
+    let r2max = 1;
+    for (const b of branches) {
+      for (const p of b.points) {
+        const dx = p.x - originX;
+        const r2 = dx * dx + p.z * p.z;
+        if (r2 > r2max) r2max = r2;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+      }
+    }
+    const r = Math.sqrt(r2max);
+    x0 = originX - r;
+    x1 = originX + r;
+  } else {
+    const yaw = (yawDeg * Math.PI) / 180;
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    for (const b of branches) {
+      for (const p of b.points) {
+        const px = originX + (p.x - originX) * cos + p.z * sin;
+        if (px < x0) x0 = px;
+        if (px > x1) x1 = px;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+      }
     }
   }
   const bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0);
@@ -97,6 +128,7 @@ export default function Studio() {
   const rafRef = useRef(0);
   const styleRef = useRef(defaultStyle);
   const dprRef = useRef(1);
+  const is3dRef = useRef(false);
 
   const [initial] = useState(() => decodeState(window.location.hash.slice(1)));
   const [seed, setSeed] = useState(() => initial?.seed ?? randomSeed());
@@ -113,6 +145,7 @@ export default function Studio() {
   const [loggedIn, setLoggedIn] = useState(false);
 
   useEffect(() => { styleRef.current = style; }, [style]);
+  useEffect(() => { is3dRef.current = params.dim3 >= 0.5; }, [params.dim3]);
 
   const allBranches = useCallback((): BranchPath[] => {
     const sim = simRef.current;
@@ -125,7 +158,7 @@ export default function Studio() {
     if (!canvas || !ctx) return;
     const w = canvas.clientWidth, h = canvas.clientHeight;
     const branches = allBranches();
-    const target = computeView(branches, styleRef.current.yaw, originXRef.current, w, h);
+    const target = computeView(branches, styleRef.current.yaw, originXRef.current, w, h, is3dRef.current);
     const v = viewRef.current;
     if (smooth) {
       v.s += (target.s - v.s) * 0.2;
@@ -245,10 +278,11 @@ export default function Studio() {
 
   const handlePreset = (i: number) => {
     const p = presets[i];
+    const s = randomSeed();
     setMacros(p.macros);
-    setParams({ ...macrosToParams(p.macros), dim3: params.dim3, ...(p.params ?? {}) });
+    setParams(jitterParams({ ...macrosToParams(p.macros), dim3: params.dim3, ...(p.params ?? {}) }, s));
     setStyle({ ...style, ...p.style });
-    setSeed(randomSeed());
+    setSeed(s);
   };
 
   const handleMacro = (key: keyof Macros) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -270,7 +304,7 @@ export default function Studio() {
     tmp.width = canvas.width; tmp.height = canvas.height;
     const ctx = tmp.getContext('2d')!;
     const branches = allBranches();
-    const view = computeView(branches, styleRef.current.yaw, originXRef.current, w, h);
+    const view = computeView(branches, styleRef.current.yaw, originXRef.current, w, h, is3dRef.current);
     drawScene(ctx, branches, styleRef.current, originXRef.current, view, dprRef.current, w, h);
     const link = document.createElement('a');
     link.download = `motif-${seed}.png`;
