@@ -32,6 +32,8 @@ web-sandbox-branch(失敗作、参照用に残置)の反省を踏まえた新規
 - `npm run dev` — 開発サーバー(http://localhost:3000)
 - `npm run build` — 本番ビルド
 - `npm run lint` — ESLint
+- **プリセット調整は必ず画像で目視確認**: `npx tsx tools/render.mts [プリセット名] [seed] [yaw]`
+  で tools/out/*.png に描画される(ブラウザ不要)。数値だけで調整しない — 毛玉/暗すぎ等は画像でしか気づけない
 - エンジン検証: DOM不要なのでNodeで直接実行可(シード同一→結果同一の確認)
 - UI確認: ブラウザでガチャ/プリセット/スライダー/⏩/PNG保存/URL共有を実際に触る
 
