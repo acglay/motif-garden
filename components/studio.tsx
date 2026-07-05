@@ -232,6 +232,7 @@ export default function Studio() {
     setMacros(p.macros);
     setParams({ ...macrosToParams(p.macros), dim3: params.dim3, ...(p.params ?? {}) });
     setStyle({ ...style, ...p.style });
+    setSeed(randomSeed());
   };
 
   const handleMacro = (key: keyof Macros) => (e: React.ChangeEvent<HTMLInputElement>) => {

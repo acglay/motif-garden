@@ -217,13 +217,13 @@ export const presets: Preset[] = [
     },
   },
   {
-    name: '海藻', macros: M(0.1, 0.25, 0.6, 0.1, 0.5),
-    style: { hue: 150, thickness: 7 },
+    name: '海藻', macros: M(0.15, 0.35, 0.6, 0.1, 0.7),
+    style: { hue: 150, thickness: 7, thickDecay: 0.88 },
     params: {
-      generations: 4, branchLength: 55, lengthDecay: 0.95, children: 2,
-      splitAngle: 0.3, splitAngleVar: 0.5,
-      curl: 0.03, maxTurn: 0.14, waveAmp: 0.13, waveFreq: 0.09,
-      gravity: -0.35, avoidRadius: 12, crowdLimit: 10,
+      generations: 5, branchLength: 45, lengthDecay: 1.0, children: 2.25,
+      splitAngle: 0.35, splitAngleVar: 0.5,
+      curl: 0.05, maxTurn: 0.16, waveAmp: 0.15, waveFreq: 0.08,
+      gravity: -0.45, avoidRadius: 10, crowdLimit: 14, trunkBias: 0,
     },
   },
   {
@@ -235,7 +235,7 @@ export const presets: Preset[] = [
     name: '雷', macros: M(0.5, 0.4, 0.05, 0.95, 0.2),
     style: { hue: 200, thickness: 2.5, thickDecay: 0.9 },
     params: {
-      startDown: 1, children: 1.12, generations: 12, branchLength: 30,
+      startDown: 1, children: 1.35, generations: 12, branchLength: 30,
       lengthVar: 0.7, splitAngle: 1.0, splitAngleVar: 0.9,
       stepSize: 8, curl: 0.01, maxTurn: 0.5, kink: 0.8, waveAmp: 0,
       gravity: 0.85, avoidRadius: 4, crowdLimit: 16, trunkBias: 0,
