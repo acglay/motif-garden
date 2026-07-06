@@ -49,32 +49,63 @@ async function render(name: string, params: GrowthParams, style: Style, seed: nu
     const px = (origin.x + (pl.x - origin.x) * cos + pl.z * sin) * s + tx;
     shapes += `<line x1="${px.toFixed(1)}" y1="0" x2="${px.toFixed(1)}" y2="${H}" stroke="rgba(255,255,255,0.18)" stroke-width="3"/>`;
   }
+  const alphaOf = (w: number) => Math.min(0.9, Math.max(0.22, w / 5 + 0.12));
+  const colorOf = (gen: number, a: number) => style.hue < 0
+    ? `rgba(255,255,255,${a.toFixed(2)})`
+    : `hsla(${style.hue},75%,${Math.min(88, 38 + gen * 4)}%,${a.toFixed(2)})`;
+
+  let defs = '';
+  let gid = 0;
   for (const b of branches) {
     const w0 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen));
     const w1 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen + 1));
-    const a = Math.min(0.9, Math.max(0.22, (w0 + w1) / 10 + 0.12));
-    const color = style.hue < 0 ? 'rgb(255,255,255)' : `hsl(${style.hue},75%,${Math.min(88, 38 + b.gen * 4)}%)`;
     const pts = b.points;
     const n = pts.length;
-    const px: number[] = new Array(n), py: number[] = new Array(n);
+    const px: number[] = new Array(n), py: number[] = new Array(n), hws: number[] = new Array(n);
     for (let i = 0; i < n; i++) {
       px[i] = (origin.x + (pts[i].x - origin.x) * cos + pts[i].z * sin) * s + tx;
       py[i] = pts[i].y * s + ty;
+      hws[i] = ((w0 + (w1 - w0) * (i / (n - 1))) / 2) * s;
     }
+
+    let fill: string;
+    const gdx = px[n - 1] - px[0], gdy = py[n - 1] - py[0];
+    if (w0 > 1.5 && gdx * gdx + gdy * gdy > 1) {
+      const id = `g${gid++}`;
+      defs += `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${px[0].toFixed(1)}" y1="${py[0].toFixed(1)}" x2="${px[n - 1].toFixed(1)}" y2="${py[n - 1].toFixed(1)}"><stop offset="0" stop-color="${colorOf(b.gen, alphaOf(w0))}"/><stop offset="1" stop-color="${colorOf(b.gen + 1, alphaOf(w1))}"/></linearGradient>`;
+      fill = `url(#${id})`;
+    } else {
+      fill = colorOf(b.gen, alphaOf((w0 + w1) / 2));
+    }
+
     const left: string[] = [], right: string[] = [];
     for (let i = 0; i < n; i++) {
       const i0 = Math.max(0, i - 1), i1 = Math.min(n - 1, i + 1);
       let dx = px[i1] - px[i0], dy = py[i1] - py[i0];
       const m = Math.hypot(dx, dy) || 1;
       dx /= m; dy /= m;
-      const hw = ((w0 + (w1 - w0) * (i / (n - 1))) / 2) * s;
+      const hw = hws[i];
       left.push(`${(px[i] - dy * hw).toFixed(1)},${(py[i] + dx * hw).toFixed(1)}`);
       right.push(`${(px[i] + dy * hw).toFixed(1)},${(py[i] - dx * hw).toFixed(1)}`);
     }
-    const d = `M${left.join('L')}L${right.reverse().join('L')}Z`;
-    shapes += `<path d="${d}" fill="${color}" fill-opacity="${a.toFixed(2)}"/>`;
+    let d = `M${left.join('L')}L${right.reverse().join('L')}Z`;
+
+    const arcAt = (i: number) => {
+      const r = hws[i], cx = px[i], cy = py[i];
+      d += `M${(cx + r).toFixed(1)},${cy.toFixed(1)}A${r.toFixed(1)},${r.toFixed(1)} 0 1 0 ${(cx - r).toFixed(1)},${cy.toFixed(1)}A${r.toFixed(1)},${r.toFixed(1)} 0 1 0 ${(cx + r).toFixed(1)},${cy.toFixed(1)}Z`;
+    };
+    arcAt(0);
+    arcAt(n - 1);
+    for (let i = 1; i < n - 1; i++) {
+      const ax = px[i] - px[i - 1], ay = py[i] - py[i - 1];
+      const bx = px[i + 1] - px[i], by = py[i + 1] - py[i];
+      const ma = Math.hypot(ax, ay) || 1, mb = Math.hypot(bx, by) || 1;
+      if ((ax * bx + ay * by) / (ma * mb) < 0.86) arcAt(i);
+    }
+
+    shapes += `<path d="${d}" fill="${fill}"/>`;
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#000"/>${shapes}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>${defs}</defs><rect width="${W}" height="${H}" fill="#000"/>${shapes}</svg>`;
   await sharp(Buffer.from(svg)).png().toFile(`${OUT}/${name}.png`);
   console.log(`${name}: branches=${branches.length}`);
 }

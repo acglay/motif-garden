@@ -58,17 +58,33 @@ function drawScene(
     ctx.strokeStyle = 'rgba(255,255,255,0.16)';
     ctx.stroke();
   }
+  const alphaOf = (w: number) => Math.min(0.9, Math.max(0.22, w / 5 + 0.12));
+  const colorOf = (gen: number, a: number) => style.hue < 0
+    ? `rgba(255,255,255,${a})`
+    : `hsla(${style.hue}, 75%, ${Math.min(88, 38 + gen * 4)}%, ${a})`;
+
   for (const b of branches) {
     const w0 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen));
     const w1 = Math.max(0.5, style.thickness * Math.pow(style.thickDecay, b.gen + 1));
-    const a = Math.min(0.9, Math.max(0.22, (w0 + w1) / 10 + 0.12));
     const pts = b.points;
     const n = pts.length;
-    const px: number[] = new Array(n), py: number[] = new Array(n);
+    const px: number[] = new Array(n), py: number[] = new Array(n), hws: number[] = new Array(n);
     for (let i = 0; i < n; i++) {
       px[i] = originX + (pts[i].x - originX) * cos + pts[i].z * sin;
       py[i] = pts[i].y;
+      hws[i] = (w0 + (w1 - w0) * (i / (n - 1))) / 2;
     }
+
+    const gdx = px[n - 1] - px[0], gdy = py[n - 1] - py[0];
+    if (w0 > 1.5 && gdx * gdx + gdy * gdy > 1) {
+      const grad = ctx.createLinearGradient(px[0], py[0], px[n - 1], py[n - 1]);
+      grad.addColorStop(0, colorOf(b.gen, alphaOf(w0)));
+      grad.addColorStop(1, colorOf(b.gen + 1, alphaOf(w1)));
+      ctx.fillStyle = grad;
+    } else {
+      ctx.fillStyle = colorOf(b.gen, alphaOf((w0 + w1) / 2));
+    }
+
     ctx.beginPath();
     const rx: number[] = new Array(n), ry: number[] = new Array(n);
     for (let i = 0; i < n; i++) {
@@ -76,7 +92,7 @@ function drawScene(
       let dx = px[i1] - px[i0], dy = py[i1] - py[i0];
       const m = Math.hypot(dx, dy) || 1;
       dx /= m; dy /= m;
-      const hw = (w0 + (w1 - w0) * (i / (n - 1))) / 2;
+      const hw = hws[i];
       const lx = px[i] - dy * hw, ly = py[i] + dx * hw;
       rx[i] = px[i] + dy * hw; ry[i] = py[i] - dx * hw;
       if (i === 0) ctx.moveTo(lx, ly);
@@ -84,9 +100,19 @@ function drawScene(
     }
     for (let i = n - 1; i >= 0; i--) ctx.lineTo(rx[i], ry[i]);
     ctx.closePath();
-    ctx.fillStyle = style.hue < 0
-      ? `rgba(255,255,255,${a})`
-      : `hsla(${style.hue}, 75%, ${Math.min(88, 38 + b.gen * 4)}%, ${a})`;
+
+    const arcAt = (i: number) => {
+      ctx.moveTo(px[i] + hws[i], py[i]);
+      ctx.arc(px[i], py[i], hws[i], 0, Math.PI * 2);
+    };
+    arcAt(0);
+    arcAt(n - 1);
+    for (let i = 1; i < n - 1; i++) {
+      const ax = px[i] - px[i - 1], ay = py[i] - py[i - 1];
+      const bx = px[i + 1] - px[i], by = py[i + 1] - py[i];
+      const ma = Math.hypot(ax, ay) || 1, mb = Math.hypot(bx, by) || 1;
+      if ((ax * bx + ay * by) / (ma * mb) < 0.86) arcAt(i);
+    }
     ctx.fill();
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);

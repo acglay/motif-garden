@@ -183,12 +183,12 @@ export const presets: Preset[] = [
     params: { droop: 0.8, lengthDecay: 0.92, gravity: -0.15, children: 2.4 },
   },
   {
-    name: '龍血樹', macros: M(0.4, 0.6, 0.06, 0.2, 0.7),
+    name: '龍血樹', macros: M(0.55, 0.6, 0.06, 0.2, 0.7),
     style: { hue: 25, thickness: 16, thickDecay: 0.8 },
     params: {
-      trunkBias: 0, children: 2.3, splitAngle: 0.62, splitAngleVar: 0.2, generations: 8,
+      trunkBias: 0, children: 2.3, splitAngle: 0.85, splitAngleVar: 0.2, generations: 8,
       branchLength: 26, lengthDecay: 0.78, lengthVar: 0.15,
-      curl: 0.02, maxTurn: 0.1, gravity: -0.55, droop: -0.35,
+      curl: 0.02, maxTurn: 0.1, gravity: -0.4, droop: -0.3,
       avoidRadius: 9, crowdLimit: 12,
     },
   },
