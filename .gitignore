@@ -44,3 +44,10 @@ next-env.d.ts
 .env*
 
 tools/out/
+node_modules/
+.next/
+.vercel/
+.turbo/
+*.log
+.claude/settings.local.json
+
