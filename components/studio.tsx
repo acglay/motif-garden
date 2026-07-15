@@ -22,6 +22,8 @@ const macroLabels: { key: keyof Macros; label: string }[] = [
   { key: 'density', label: 'みっしゅう' },
 ];
 
+const isDirty = (v: number, base: number) => Math.abs(v - base) > 1e-6;
+
 function drawScene(
   ctx: CanvasRenderingContext2D,
   branches: BranchPath[],
@@ -186,6 +188,7 @@ export default function Studio() {
   const [style, setStyle] = useState<Style>(() =>
     initial?.style ? { ...defaultStyle, ...initial.style } : defaultStyle);
   const [world, setWorld] = useState<World>(() => initial?.world ?? emptyWorld);
+  const [presetId, setPresetId] = useState<number | null>(null);
   const [editMode, setEditMode] = useState<'none' | 'obs' | 'pole'>('none');
   const [detailOpen, setDetailOpen] = useState(false);
   const [toast, setToast] = useState('');
@@ -339,6 +342,7 @@ export default function Studio() {
       dim3: params.dim3,
     });
     setSeed(randomSeed());
+    setPresetId(null);
   };
 
   const handlePreset = (i: number) => {
@@ -348,6 +352,40 @@ export default function Studio() {
     setParams(jitterParams({ ...macrosToParams(p.macros), dim3: params.dim3, ...(p.params ?? {}) }, s));
     setStyle({ ...style, ...p.style });
     setSeed(s);
+    setPresetId(i);
+  };
+
+  // Per-parameter "default": if a preset is active, its canonical (un-jittered)
+  // values; otherwise the app defaults. Mode (dim3) and view (yaw) are excluded
+  // since the full reset never touches them.
+  const baselineMacros: Macros = presetId != null ? presets[presetId].macros : defaultMacros;
+  const baselineParams: GrowthParams = presetId != null
+    ? { ...macrosToParams(baselineMacros), ...(presets[presetId].params ?? {}) }
+    : macrosToParams(defaultMacros);
+  const baselineStyle: Style = presetId != null
+    ? { ...defaultStyle, ...presets[presetId].style }
+    : defaultStyle;
+
+  const resetMacro = (key: keyof Macros) => {
+    const v = baselineMacros[key];
+    const m = { ...macros, [key]: v };
+    setMacros(m);
+    setParams({ ...params, ...macroPatch(m, key) });
+  };
+
+  const resetParam = (key: keyof GrowthParams) => {
+    setParams({ ...params, [key]: baselineParams[key] });
+  };
+
+  const resetStyleField = (key: 'thickness' | 'thickDecay' | 'hue') => {
+    setStyle({ ...style, [key]: baselineStyle[key] });
+  };
+
+  const handleParamReset = () => {
+    setMacros(baselineMacros);
+    setParams({ ...baselineParams, dim3: params.dim3 });
+    setStyle({ ...baselineStyle, yaw: style.yaw });
+    showToast(presetId != null ? `パラメータをリセットしました(${presets[presetId].name})` : 'パラメータをリセットしました');
   };
 
   const handleMacro = (key: keyof Macros) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -402,6 +440,7 @@ export default function Studio() {
     setParams(f.state.params);
     setStyle(f.state.style);
     setWorld(f.state.world ?? emptyWorld);
+    setPresetId(null);
   };
 
   const handleDeleteFav = (fav: Favorite) => {
@@ -490,6 +529,7 @@ export default function Studio() {
           <button className="action-btn" title="同じ種でもう一度" onClick={() => restart(params, seed)}>↻</button>
           <button className="action-btn" title="新しい種" onClick={handleNewSeed}>🎲</button>
           <button className="action-btn" title="全部ガチャ" onClick={handleGacha}>🔀</button>
+          <button className="action-btn" title="パラメータをリセット" onClick={handleParamReset}>↺</button>
           <button className="action-btn" title="すぐ完成" onClick={fastForward}>⏩</button>
           <button className="action-btn" title="お気に入りにほぞん" onClick={handleFav}>☆</button>
           <button className="action-btn" title="PNG保存" onClick={handleSave}>💾</button>
@@ -551,6 +591,11 @@ export default function Studio() {
               style={{ accentColor: style.hue < 0 ? '#aaa' : `hsl(${style.hue}, 75%, 55%)` }}
             />
             <span className="val">{style.hue < 0 ? '白' : Math.round(style.hue)}</span>
+            <button
+              type="button"
+              className={`row-reset ${isDirty(style.hue, baselineStyle.hue) ? '' : 'off'}`}
+              title="既定に戻す" onClick={() => resetStyleField('hue')}
+            >↺</button>
           </div>
         </div>
 
@@ -560,6 +605,11 @@ export default function Studio() {
               <label>{label}</label>
               <input type="range" min="0" max="1" step="0.01" value={macros[key]} onChange={handleMacro(key)} />
               <span className="val">{Math.round(macros[key] * 100)}</span>
+              <button
+                type="button"
+                className={`row-reset ${isDirty(macros[key], baselineMacros[key]) ? '' : 'off'}`}
+                title="既定に戻す" onClick={() => resetMacro(key)}
+              >↺</button>
             </div>
           ))}
           <div className="row">
@@ -567,6 +617,11 @@ export default function Studio() {
             <input type="range" min="1" max="24" step="0.5" value={style.thickness}
               onChange={e => setStyle({ ...style, thickness: +e.target.value })} />
             <span className="val">{style.thickness.toFixed(1)}</span>
+            <button
+              type="button"
+              className={`row-reset ${isDirty(style.thickness, baselineStyle.thickness) ? '' : 'off'}`}
+              title="既定に戻す" onClick={() => resetStyleField('thickness')}
+            >↺</button>
           </div>
         </div>
 
@@ -585,6 +640,11 @@ export default function Studio() {
                     <input type="range" min={d.min} max={d.max} step={d.step}
                       value={params[d.key]} onChange={handleParam(d.key)} />
                     <span className="val">{Number(params[d.key]).toFixed(d.step >= 1 ? 0 : 2)}</span>
+                    <button
+                      type="button"
+                      className={`row-reset ${isDirty(params[d.key] as number, baselineParams[d.key] as number) ? '' : 'off'}`}
+                      title="既定に戻す" onClick={() => resetParam(d.key)}
+                    >↺</button>
                   </div>
                 ))}
               </div>
@@ -596,6 +656,11 @@ export default function Studio() {
                 <input type="range" min="0.6" max="0.95" step="0.01" value={style.thickDecay}
                   onChange={e => setStyle({ ...style, thickDecay: +e.target.value })} />
                 <span className="val">{style.thickDecay.toFixed(2)}</span>
+                <button
+                  type="button"
+                  className={`row-reset ${isDirty(style.thickDecay, baselineStyle.thickDecay) ? '' : 'off'}`}
+                  title="既定に戻す" onClick={() => resetStyleField('thickDecay')}
+                >↺</button>
               </div>
             </div>
           </div>

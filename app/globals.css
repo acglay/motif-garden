@@ -92,6 +92,13 @@ body { display: flex; flex-direction: column; }
 input[type="range"] { flex: 1; accent-color: var(--acc); height: 20px; min-width: 0; }
 .val { min-width: 30px; text-align: right; color: var(--acc); font-family: monospace; font-size: 10px; }
 
+.row-reset {
+  background: none; border: none; color: #888; font-size: 12px;
+  cursor: pointer; padding: 0 2px; line-height: 1; flex-shrink: 0;
+}
+.row-reset:active { color: var(--acc); }
+.row-reset.off { visibility: hidden; }
+
 .detail-toggle {
   display: block; width: 100%; background: none; border: none;
   border-top: 1px solid rgba(255,255,255,0.06);
